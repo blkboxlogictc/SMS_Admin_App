@@ -1,0 +1,179 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Edit, Trash2, BarChart3, Building, List, PieChart } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { SurveyModal } from "@/components/modals/survey-modal";
+import { getAuthToken } from "@/lib/supabase";
+import { apiRequest } from "@/lib/queryClient";
+import type { Survey } from "@shared/schema";
+
+export default function Surveys() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedSurvey, setSelectedSurvey] = useState<Survey | null>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const token = getAuthToken();
+
+  const { data: surveys, isLoading } = useQuery({
+    queryKey: ["/api/surveys"],
+    queryFn: async () => {
+      const response = await fetch("/api/surveys", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to fetch surveys");
+      return response.json();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/surveys/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/surveys"] });
+      toast({
+        title: "Success",
+        description: "Survey deleted successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete survey",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEdit = (survey: Survey) => {
+    setSelectedSurvey(survey);
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = async (id: number) => {
+    if (confirm("Are you sure you want to delete this survey?")) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const handleCreate = () => {
+    setSelectedSurvey(null);
+    setIsModalOpen(true);
+  };
+
+  if (isLoading) {
+    return <div>Loading surveys...</div>;
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold text-slate-900">Surveys Management</h2>
+        <Button onClick={handleCreate} className="bg-blue-600 hover:bg-blue-700">
+          <Plus className="w-4 h-4 mr-2" />
+          Create Survey
+        </Button>
+      </div>
+
+      {/* Surveys List */}
+      <div className="space-y-6">
+        {surveys?.length === 0 ? (
+          <Card>
+            <CardContent className="text-center py-12">
+              <BarChart3 className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+              <p className="text-slate-500">No surveys found. Create your first survey to get started.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          surveys?.map((survey: Survey) => (
+            <Card key={survey.id}>
+              <CardContent className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900 mb-2">{survey.title}</h3>
+                    <p className="text-sm text-slate-600">{survey.description}</p>
+                    <div className="flex items-center space-x-4 mt-3">
+                      <span className="text-sm text-slate-500 flex items-center">
+                        <Building className="w-4 h-4 mr-1" />
+                        Business: {survey.businessId ? `Business #${survey.businessId}` : "All Businesses"}
+                      </span>
+                      <span className="text-sm text-slate-500 flex items-center">
+                        <List className="w-4 h-4 mr-1" />
+                        {Array.isArray(survey.questions) ? survey.questions.length : 0} questions
+                      </span>
+                      <span className="text-sm text-slate-500 flex items-center">
+                        <PieChart className="w-4 h-4 mr-1" />
+                        {survey.responseCount} responses
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Badge className={survey.active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
+                      {survey.active ? "Active" : "Inactive"}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-blue-600 hover:text-blue-700"
+                    >
+                      <BarChart3 className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleEdit(survey)}
+                      className="text-slate-600 hover:text-slate-700"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(survey.id)}
+                      className="text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Survey Questions Preview */}
+                <div className="border-t border-slate-200 pt-4">
+                  <h4 className="text-sm font-medium text-slate-900 mb-3">Questions Preview:</h4>
+                  <div className="space-y-2">
+                    {Array.isArray(survey.questions) && survey.questions.length > 0 ? (
+                      survey.questions.slice(0, 3).map((question: any, index: number) => (
+                        <div key={index} className="text-sm">
+                          <span className="text-slate-600">{index + 1}.</span>
+                          <span className="text-slate-900 ml-2">
+                            {question.text || question.question || "Question text"} ({question.type || "text"})
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-sm text-slate-500">No questions configured</div>
+                    )}
+                    {Array.isArray(survey.questions) && survey.questions.length > 3 && (
+                      <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 mt-2">
+                        View all {survey.questions.length} questions →
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+
+      <SurveyModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        survey={selectedSurvey}
+      />
+    </div>
+  );
+}
