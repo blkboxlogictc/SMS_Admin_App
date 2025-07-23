@@ -32,11 +32,11 @@ export class MemoryStorage implements IStorage {
   }
 
   private seedData() {
-    // Add default admin user with properly hashed password
+    // Add default admin user with freshly generated hash for admin123
     this.users.push({
       id: this.nextId++,
       email: 'admin@stuartmainstreet.com',
-      password: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // admin123
+      password: '$2b$10$sC9iJJ84NUukTTf2EN4.e.dP6QFWiQSL6.yPuKWGBWk5clkXEZfs2', // admin123
       role: 'admin',
       createdAt: new Date()
     });
