@@ -50,7 +50,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({ token, user: { id: user.id, email: user.email, role: user.role } });
     } catch (error) {
-      res.status(500).json({ message: "Login failed" });
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Login failed", error: error instanceof Error ? error.message : "Unknown error" });
     }
   });
 
@@ -68,7 +69,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.status(201).json({ user: { id: user.id, email: user.email, role: user.role } });
     } catch (error) {
-      res.status(500).json({ message: "Registration failed" });
+      console.error("Registration error:", error);
+      res.status(500).json({ message: "Registration failed", error: error instanceof Error ? error.message : "Unknown error" });
     }
   });
 

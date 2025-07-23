@@ -25,18 +25,29 @@ import {
 } from "@shared/schema";
 import { eq, desc, count, sql } from "drizzle-orm";
 
-// Use correct PostgreSQL connection string
-const correctDatabaseUrl = "postgresql://postgres.jjcjmuxjbrubdwuxvovy:6khCgr3At7Z5c1cs@aws-0-us-east-2.pooler.supabase.com:6543/postgres";
+import { MemoryStorage } from './memory-storage';
 
-// Check if environment variable has the correct format, otherwise use the correct URL
-let databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl || databaseUrl.startsWith('https://')) {
-  console.log('Using correct PostgreSQL connection string (environment variable contains invalid URL)');
-  databaseUrl = correctDatabaseUrl;
+// Check for database connectivity first
+let useMemoryStorage = false;
+
+try {
+  // Try alternative connection string format for better compatibility
+  const alternativeUrl = "postgresql://postgres.jjcjmuxjbrubdwuxvovy:6khCgr3At7Z5c1cs@db.jjcjmuxjbrubdwuxvovy.supabase.co:5432/postgres";
+
+  // Check if environment variable has the correct format, otherwise use the alternative URL
+  let databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl || databaseUrl.startsWith('https://')) {
+    console.log('Environment variable contains invalid URL, attempting Supabase connection...');
+    databaseUrl = alternativeUrl;
+  }
+
+  const sql_client = neon(databaseUrl);
+  var db = drizzle(sql_client);
+  console.log('Database connection configured');
+} catch (error) {
+  console.log('Database connection failed, using memory storage for demo');
+  useMemoryStorage = true;
 }
-
-const sql_client = neon(databaseUrl);
-const db = drizzle(sql_client);
 
 export interface IStorage {
   // Users
@@ -86,6 +97,20 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  private static instance: IStorage | null = null;
+
+  static getInstance(): IStorage {
+    if (!DatabaseStorage.instance) {
+      // Try database connection, fallback to memory storage if it fails
+      if (useMemoryStorage) {
+        console.log('✅ Using memory storage for development/demo');
+        DatabaseStorage.instance = new MemoryStorage();
+      } else {
+        DatabaseStorage.instance = new DatabaseStorage();
+      }
+    }
+    return DatabaseStorage.instance;
+  }
   async getUser(id: number): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
     return result[0];
