@@ -32,11 +32,11 @@ export class MemoryStorage implements IStorage {
   }
 
   private seedData() {
-    // Add default admin user
+    // Add default admin user with properly hashed password
     this.users.push({
       id: this.nextId++,
       email: 'admin@stuartmainstreet.com',
-      password: '$2b$10$7KZvJQo2.5vXz.DwQ2j0VOmJy8Zt9mGTQCXF9Y5b7.P8sY4.S7bCm', // admin123
+      password: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // admin123
       role: 'admin',
       createdAt: new Date()
     });
@@ -122,7 +122,9 @@ export class MemoryStorage implements IStorage {
   async createUser(user: InsertUser): Promise<User> {
     const newUser: User = {
       id: this.nextId++,
-      ...user,
+      email: user.email,
+      password: user.password,
+      role: user.role || 'user',
       createdAt: new Date()
     };
     this.users.push(newUser);
@@ -130,7 +132,7 @@ export class MemoryStorage implements IStorage {
   }
 
   async getBusinesses(): Promise<Business[]> {
-    return [...this.businesses].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return [...this.businesses].sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
   }
 
   async getBusiness(id: number): Promise<Business | undefined> {
@@ -140,7 +142,13 @@ export class MemoryStorage implements IStorage {
   async createBusiness(business: InsertBusiness): Promise<Business> {
     const newBusiness: Business = {
       id: this.nextId++,
-      ...business,
+      name: business.name,
+      description: business.description || null,
+      address: business.address || null,
+      category: business.category || null,
+      imageUrl: business.imageUrl || null,
+      featured: business.featured || false,
+      active: business.active || true,
       createdAt: new Date()
     };
     this.businesses.push(newBusiness);
@@ -162,7 +170,7 @@ export class MemoryStorage implements IStorage {
   }
 
   async getEvents(): Promise<Event[]> {
-    return [...this.events].sort((a, b) => b.date.getTime() - a.date.getTime());
+    return [...this.events].sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
   }
 
   async getEvent(id: number): Promise<Event | undefined> {
@@ -172,7 +180,14 @@ export class MemoryStorage implements IStorage {
   async createEvent(event: InsertEvent): Promise<Event> {
     const newEvent: Event = {
       id: this.nextId++,
-      ...event,
+      title: event.title,
+      description: event.description,
+      date: event.date,
+      time: event.time,
+      location: event.location,
+      imageUrl: event.imageUrl || null,
+      rsvpCount: event.rsvpCount || 0,
+      status: event.status || 'upcoming',
       createdAt: new Date()
     };
     this.events.push(newEvent);
@@ -194,7 +209,7 @@ export class MemoryStorage implements IStorage {
   }
 
   async getRewards(): Promise<Reward[]> {
-    return [...this.rewards].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return [...this.rewards].sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
   }
 
   async getReward(id: number): Promise<Reward | undefined> {
@@ -204,7 +219,13 @@ export class MemoryStorage implements IStorage {
   async createReward(reward: InsertReward): Promise<Reward> {
     const newReward: Reward = {
       id: this.nextId++,
-      ...reward,
+      name: reward.name,
+      description: reward.description,
+      pointThreshold: reward.pointThreshold,
+      expirationDate: reward.expirationDate || null,
+      redeemedCount: reward.redeemedCount || 0,
+      active: reward.active || true,
+      businessId: reward.businessId || null,
       createdAt: new Date()
     };
     this.rewards.push(newReward);
@@ -226,7 +247,7 @@ export class MemoryStorage implements IStorage {
   }
 
   async getSurveys(): Promise<Survey[]> {
-    return [...this.surveys].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return [...this.surveys].sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
   }
 
   async getSurvey(id: number): Promise<Survey | undefined> {
@@ -236,7 +257,13 @@ export class MemoryStorage implements IStorage {
   async createSurvey(survey: InsertSurvey): Promise<Survey> {
     const newSurvey: Survey = {
       id: this.nextId++,
-      ...survey,
+      title: survey.title,
+      description: survey.description || null,
+      type: survey.type,
+      questions: survey.questions,
+      businessId: survey.businessId || null,
+      responseCount: survey.responseCount || 0,
+      active: survey.active || true,
       createdAt: new Date()
     };
     this.surveys.push(newSurvey);
