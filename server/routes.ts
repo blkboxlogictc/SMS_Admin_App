@@ -65,56 +65,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('- Error:', authError);
       console.log('- User ID:', authData?.user?.id);
       console.log('- User Email:', authData?.user?.email);
+      console.log('- User Metadata:', authData?.user?.user_metadata);
 
       if (authError || !authData.user) {
         console.log('Authentication failed:', authError?.message);
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
-      // Step 2: Use the authenticated user's ID to check their role in our users table
-      try {
-        console.log('Step 2: Checking user role in database...');
-        console.log('Looking for user ID:', authData.user.id);
-        const dbUser = await storage.getUser(authData.user.id);
-        console.log('Database query result:', dbUser);
-        
-        if (!dbUser) {
-          console.log('❌ User not found in database');
-          return res.status(403).json({ message: "User not found in system" });
-        }
+      // Step 2: Check user role from Supabase user metadata
+      console.log('Step 2: Checking user role from metadata...');
+      const userRole = authData.user.user_metadata?.role || authData.user.app_metadata?.role;
+      console.log('User role from metadata:', userRole);
+      
+      if (userRole !== "admin") {
+        console.log('❌ User does not have admin role');
+        return res.status(403).json({ message: "Admin access required" });
+      }
 
-        console.log('✅ User found in database');
-        console.log('User role from database:', dbUser.role);
-        console.log('Role comparison: dbUser.role !== "admin":', dbUser.role !== "admin");
-        
-        if (dbUser.role !== "admin") {
-          console.log('❌ User does not have admin role');
-          return res.status(403).json({ message: "Admin access required" });
-        }
+      console.log('✅ User has admin role - granting access');
 
-        console.log('✅ User has admin role - granting access');
-
-        // Step 3: Create JWT token for admin user
-        const token = jwt.sign({
+      // Step 3: Create JWT token for admin user
+      const token = jwt.sign({
+        id: authData.user.id,
+        email: authData.user.email,
+        role: userRole
+      }, JWT_SECRET, { expiresIn: '24h' });
+      
+      res.json({
+        token,
+        user: {
           id: authData.user.id,
           email: authData.user.email,
-          role: dbUser.role
-        }, JWT_SECRET, { expiresIn: '24h' });
-        
-        res.json({
-          token,
-          user: {
-            id: authData.user.id,
-            email: authData.user.email,
-            role: dbUser.role,
-            firstName: dbUser.firstName,
-            lastName: dbUser.lastName
-          }
-        });
-      } catch (dbError) {
-        console.error("Database error:", dbError);
-        return res.status(403).json({ message: "Unable to verify admin access" });
-      }
+          role: userRole,
+          firstName: authData.user.user_metadata?.first_name || 'Admin',
+          lastName: authData.user.user_metadata?.last_name || 'User'
+        }
+      });
     } catch (error) {
       console.error("Login error:", error);
       res.status(500).json({ message: "Login failed", error: error instanceof Error ? error.message : "Unknown error" });
