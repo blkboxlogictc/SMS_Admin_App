@@ -9,11 +9,35 @@
       }
     },
     {
+      "src": "api/auth.ts",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/dashboard.ts",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/analytics.ts",
+      "use": "@vercel/node"
+    },
+    {
       "src": "api/index.ts",
       "use": "@vercel/node"
     }
   ],
   "routes": [
+    {
+      "src": "/api/auth/login",
+      "dest": "/api/auth"
+    },
+    {
+      "src": "/api/dashboard/(.*)",
+      "dest": "/api/dashboard"
+    },
+    {
+      "src": "/api/analytics/(.*)",
+      "dest": "/api/analytics"
+    },
     {
       "src": "/api/(.*)",
       "dest": "/api/index.ts"
