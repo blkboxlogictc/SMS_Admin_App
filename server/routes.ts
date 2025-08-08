@@ -1,5 +1,4 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
 import { z } from "zod";
 import { storage } from "./storage";
 import { insertBusinessSchema, insertEventSchema, insertSurveySchema, insertRewardItemSchema } from "@shared/schema";
@@ -45,7 +44,7 @@ function authenticateToken(req: any, res: any, next: any) {
   });
 }
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export async function registerRoutes(app: Express): Promise<void> {
   // Authentication routes
   app.post("/api/auth/login", async (req, res) => {
     try {
@@ -665,6 +664,5 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  const httpServer = createServer(app);
-  return httpServer;
+  // Routes registered successfully
 }
