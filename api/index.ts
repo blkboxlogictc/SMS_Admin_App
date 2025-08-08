@@ -136,10 +136,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
     
-    // Dashboard stats endpoint
+    // Dashboard stats endpoint - simplified with direct Supabase queries
     if (req.url === '/api/dashboard/stats' && req.method === 'GET') {
       try {
-        console.log('=== DASHBOARD STATS REQUEST ===');
+        console.log('=== DASHBOARD STATS REQUEST (SIMPLIFIED) ===');
         
         // Check authentication
         const auth = authenticateToken(req);
@@ -149,47 +149,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         console.log('Authentication successful for user:', auth.user);
         
-        console.log('Getting database connection...');
-        const db = await getDbConnection();
-        const schemas = await getSchemas();
+        console.log('Using direct Supabase queries...');
         
-        if (!db) {
-          console.error('Database connection failed');
-          return res.status(500).json({ message: 'Database connection failed' });
-        }
+        // Use direct Supabase queries instead of Drizzle ORM
+        const { data: checkins, error: checkinsError } = await supabase
+          .from('checkins')
+          .select('*', { count: 'exact', head: true });
         
-        if (!schemas) {
-          console.error('Schema loading failed');
-          return res.status(500).json({ message: 'Schema loading failed' });
-        }
+        const { data: events, error: eventsError } = await supabase
+          .from('events')
+          .select('*', { count: 'exact', head: true })
+          .gt('event_date', new Date().toISOString());
+        
+        const { data: surveyResponses, error: surveyError } = await supabase
+          .from('survey_responses')
+          .select('*', { count: 'exact', head: true });
+        
+        const { data: rewardRedemptions, error: rewardsError } = await supabase
+          .from('reward_redemptions')
+          .select('*', { count: 'exact', head: true });
 
-        const { checkins, events, surveyResponses, rewardRedemptions, count, sql } = schemas;
-        console.log('Schemas loaded successfully');
-
-        console.log('Executing dashboard stats queries...');
+        console.log('Query results:');
+        console.log('- Checkins count:', checkins);
+        console.log('- Events count:', events);
+        console.log('- Survey responses count:', surveyResponses);
+        console.log('- Reward redemptions count:', rewardRedemptions);
         
-        // Test each query individually with better error handling
-        console.log('Querying total checkins...');
-        const [totalCheckins] = await db.select({ count: count() }).from(checkins);
-        console.log('Total checkins result:', totalCheckins);
-        
-        console.log('Querying active events...');
-        const [activeEvents] = await db.select({ count: count() }).from(events).where(sql`${events.eventDate} > NOW()`);
-        console.log('Active events result:', activeEvents);
-        
-        console.log('Querying survey responses...');
-        const [surveyResponsesCount] = await db.select({ count: count() }).from(surveyResponses);
-        console.log('Survey responses result:', surveyResponsesCount);
-        
-        console.log('Querying reward redemptions...');
-        const [rewardsRedeemedCount] = await db.select({ count: count() }).from(rewardRedemptions);
-        console.log('Reward redemptions result:', rewardsRedeemedCount);
+        console.log('Query errors:');
+        console.log('- Checkins error:', checkinsError);
+        console.log('- Events error:', eventsError);
+        console.log('- Survey error:', surveyError);
+        console.log('- Rewards error:', rewardsError);
 
         const result = {
-          totalCheckins: totalCheckins?.count || 0,
-          activeEvents: activeEvents?.count || 0,
-          surveyResponses: surveyResponsesCount?.count || 0,
-          rewardsRedeemed: rewardsRedeemedCount?.count || 0,
+          totalCheckins: checkins || 0,
+          activeEvents: events || 0,
+          surveyResponses: surveyResponses || 0,
+          rewardsRedeemed: rewardRedemptions || 0,
         };
         
         console.log('Dashboard stats final result:', result);
