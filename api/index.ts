@@ -16,6 +16,41 @@ const supabase = createClient(
   }
 );
 
+// Dynamic database connection function
+async function getDbConnection() {
+  try {
+    const { drizzle } = await import("drizzle-orm/postgres-js");
+    const postgres = (await import("postgres")).default;
+    
+    if (!process.env.DATABASE_URL) {
+      throw new Error('DATABASE_URL not found');
+    }
+    
+    const queryClient = postgres(process.env.DATABASE_URL, {
+      max: 1,
+      idle_timeout: 20,
+      connect_timeout: 10,
+    });
+    
+    return drizzle(queryClient);
+  } catch (error) {
+    console.error('Database connection error:', error);
+    return null;
+  }
+}
+
+// Dynamic schema imports
+async function getSchemas() {
+  try {
+    const schema = await import("../shared/schema");
+    const { eq, desc, count, sql } = await import("drizzle-orm");
+    return { ...schema, eq, desc, count, sql };
+  } catch (error) {
+    console.error('Schema import error:', error);
+    return null;
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     console.log('Handler called:', req.method, req.url);
@@ -81,6 +116,195 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
     
+    // Dashboard stats endpoint
+    if (req.url === '/api/dashboard/stats' && req.method === 'GET') {
+      try {
+        console.log('=== DASHBOARD STATS REQUEST ===');
+        const db = await getDbConnection();
+        const schemas = await getSchemas();
+        
+        if (!db || !schemas) {
+          throw new Error('Database connection or schemas not available');
+        }
+
+        const { checkins, events, surveyResponses, rewardRedemptions, count, sql } = schemas;
+
+        console.log('Executing dashboard stats queries...');
+        const [totalCheckins] = await db.select({ count: count() }).from(checkins);
+        const [activeEvents] = await db.select({ count: count() }).from(events).where(sql`${events.eventDate} > NOW()`);
+        const [surveyResponsesCount] = await db.select({ count: count() }).from(surveyResponses);
+        const [rewardsRedeemedCount] = await db.select({ count: count() }).from(rewardRedemptions);
+
+        const result = {
+          totalCheckins: totalCheckins.count,
+          activeEvents: activeEvents.count,
+          surveyResponses: surveyResponsesCount.count,
+          rewardsRedeemed: rewardsRedeemedCount.count,
+        };
+        
+        console.log('Dashboard stats result:', result);
+        return res.status(200).json(result);
+      } catch (error) {
+        console.error('Dashboard stats error:', error);
+        return res.status(500).json({
+          message: "Failed to fetch dashboard stats",
+          error: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
+    }
+
+    // Dashboard recent activity endpoint
+    if (req.url === '/api/dashboard/recent-activity' && req.method === 'GET') {
+      try {
+        console.log('=== RECENT ACTIVITY REQUEST ===');
+        const db = await getDbConnection();
+        const schemas = await getSchemas();
+        
+        if (!db || !schemas) {
+          throw new Error('Database connection or schemas not available');
+        }
+
+        const { events, rewardItems, surveys, desc } = schemas;
+        const activities: { type: string; description: string; timestamp: Date; icon: string }[] = [];
+
+        // Get recent events
+        const recentEvents = await db.select({
+          name: events.name,
+          createdAt: events.createdAt,
+        }).from(events)
+          .orderBy(desc(events.createdAt))
+          .limit(3);
+
+        recentEvents.forEach(event => {
+          if (event.createdAt) {
+            activities.push({
+              type: 'event',
+              description: `New event created: ${event.name}`,
+              timestamp: event.createdAt,
+              icon: 'calendar'
+            });
+          }
+        });
+
+        // Get recent reward items
+        const recentRewards = await db.select({
+          name: rewardItems.name,
+          pointThreshold: rewardItems.pointThreshold,
+          createdAt: rewardItems.createdAt,
+        }).from(rewardItems)
+          .orderBy(desc(rewardItems.createdAt))
+          .limit(3);
+
+        recentRewards.forEach(reward => {
+          if (reward.createdAt) {
+            activities.push({
+              type: 'reward',
+              description: `New reward added: ${reward.name} - ${reward.pointThreshold} points`,
+              timestamp: reward.createdAt,
+              icon: 'gift'
+            });
+          }
+        });
+
+        // Get recent surveys
+        const recentSurveys = await db.select({
+          title: surveys.title,
+          createdAt: surveys.createdAt,
+        }).from(surveys)
+          .orderBy(desc(surveys.createdAt))
+          .limit(3);
+
+        recentSurveys.forEach(survey => {
+          if (survey.createdAt) {
+            activities.push({
+              type: 'survey',
+              description: `New survey created: ${survey.title}`,
+              timestamp: survey.createdAt,
+              icon: 'vote'
+            });
+          }
+        });
+
+        // Sort all activities by timestamp and return top 10
+        const sortedActivities = activities
+          .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+          .slice(0, 10);
+
+        return res.status(200).json(sortedActivities);
+      } catch (error) {
+        console.error('Recent activity error:', error);
+        return res.status(500).json({
+          message: "Failed to fetch recent activity data",
+          error: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
+    }
+
+    // Analytics endpoints for dashboard charts
+    if (req.url === '/api/analytics/checkins-by-event' && req.method === 'GET') {
+      try {
+        const db = await getDbConnection();
+        const schemas = await getSchemas();
+        
+        if (!db || !schemas) {
+          throw new Error('Database connection or schemas not available');
+        }
+
+        const { checkins, events, eq, desc, count } = schemas;
+
+        const result = await db
+          .select({
+            eventName: events.name,
+            checkins: count(checkins.id),
+          })
+          .from(checkins)
+          .leftJoin(events, eq(checkins.eventId, events.id))
+          .groupBy(events.name)
+          .orderBy(desc(count(checkins.id)));
+
+        const data = result.map(row => ({ eventName: row.eventName || 'Unknown Event', checkins: row.checkins }));
+        return res.status(200).json(data);
+      } catch (error) {
+        console.error('Checkins by event error:', error);
+        return res.status(500).json({
+          message: "Failed to fetch checkins by event data",
+          error: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
+    }
+
+    if (req.url === '/api/analytics/event-rsvp-trends' && req.method === 'GET') {
+      try {
+        const db = await getDbConnection();
+        const schemas = await getSchemas();
+        
+        if (!db || !schemas) {
+          throw new Error('Database connection or schemas not available');
+        }
+
+        const { events, eventRsvps, eq, count, sql } = schemas;
+
+        const result = await db
+          .select({
+            date: sql<string>`DATE(${events.eventDate})`,
+            rsvps: count(eventRsvps.id),
+          })
+          .from(events)
+          .leftJoin(eventRsvps, eq(events.id, eventRsvps.eventId))
+          .groupBy(sql`DATE(${events.eventDate})`)
+          .orderBy(sql`DATE(${events.eventDate})`);
+
+        const data = result.map(row => ({ date: row.date, rsvps: row.rsvps }));
+        return res.status(200).json(data);
+      } catch (error) {
+        console.error('Event RSVP trends error:', error);
+        return res.status(500).json({
+          message: "Failed to fetch RSVP trends",
+          error: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
+    }
+
     // Health check endpoint
     if (req.url === '/api/health' && req.method === 'GET') {
       return res.status(200).json({
