@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAuthToken } from "@/lib/supabase";
-import { 
-  MapPin, 
-  Calendar, 
-  Vote, 
+import {
+  MapPin,
+  Calendar,
+  Vote,
   Gift,
   TrendingUp,
   TrendingDown,
@@ -17,7 +17,15 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import { Bar, BarChart, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 const chartConfig = {
   checkins: {
@@ -45,9 +53,9 @@ export default function Dashboard() {
   });
 
   const { data: checkinData } = useQuery({
-    queryKey: ["/api/analytics/checkins-by-business"],
+    queryKey: ["/api/analytics/checkins-by-event"],
     queryFn: async () => {
-      const response = await fetch("/api/analytics/checkins-by-business", {
+      const response = await fetch("/api/analytics/checkins-by-event", {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error("Failed to fetch checkin data");
@@ -66,9 +74,64 @@ export default function Dashboard() {
     },
   });
 
+  const { data: recentActivity } = useQuery({
+    queryKey: ["/api/dashboard/recent-activity"],
+    queryFn: async () => {
+      const response = await fetch("/api/dashboard/recent-activity", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to fetch recent activity");
+      return response.json();
+    },
+  });
+
   if (statsLoading) {
     return <div>Loading dashboard...</div>;
   }
+
+  const getActivityIcon = (iconType: string) => {
+    switch (iconType) {
+      case "calendar":
+        return <Calendar className="w-4 h-4 text-blue-600" />;
+      case "gift":
+        return <Gift className="w-4 h-4 text-purple-600" />;
+      case "vote":
+        return <Vote className="w-4 h-4 text-emerald-600" />;
+      default:
+        return <MapPin className="w-4 h-4 text-slate-600" />;
+    }
+  };
+
+  const getActivityIconBg = (iconType: string) => {
+    switch (iconType) {
+      case "calendar":
+        return "bg-blue-100";
+      case "gift":
+        return "bg-purple-100";
+      case "vote":
+        return "bg-emerald-100";
+      default:
+        return "bg-slate-100";
+    }
+  };
+
+  const formatTimeAgo = (timestamp: string) => {
+    const now = new Date();
+    const activityTime = new Date(timestamp);
+    const diffInMinutes = Math.floor(
+      (now.getTime() - activityTime.getTime()) / (1000 * 60)
+    );
+
+    if (diffInMinutes < 60) {
+      return `${diffInMinutes} minutes ago`;
+    } else if (diffInMinutes < 1440) {
+      const hours = Math.floor(diffInMinutes / 60);
+      return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+    } else {
+      const days = Math.floor(diffInMinutes / 1440);
+      return `${days} day${days > 1 ? "s" : ""} ago`;
+    }
+  };
 
   const statCards = [
     {
@@ -134,18 +197,31 @@ export default function Dashboard() {
         {statCards.map((stat) => {
           const Icon = stat.icon;
           return (
-            <Card key={stat.title} className="bg-white shadow-sm border border-slate-200">
+            <Card
+              key={stat.title}
+              className="bg-white shadow-sm border border-slate-200"
+            >
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-slate-600">{stat.title}</p>
-                    <p className="text-2xl font-bold text-slate-900">{stat.value.toLocaleString()}</p>
-                    <p className={`text-sm mt-1 flex items-center gap-1 ${getTrendColor(stat.trend)}`}>
+                    <p className="text-sm font-medium text-slate-600">
+                      {stat.title}
+                    </p>
+                    <p className="text-2xl font-bold text-slate-900">
+                      {stat.value.toLocaleString()}
+                    </p>
+                    <p
+                      className={`text-sm mt-1 flex items-center gap-1 ${getTrendColor(
+                        stat.trend
+                      )}`}
+                    >
                       {getTrendIcon(stat.trend)}
                       {stat.change}
                     </p>
                   </div>
-                  <div className={`w-12 h-12 bg-${stat.color}-100 rounded-xl flex items-center justify-center`}>
+                  <div
+                    className={`w-12 h-12 bg-${stat.color}-100 rounded-xl flex items-center justify-center`}
+                  >
                     <Icon className={`w-6 h-6 text-${stat.color}-600`} />
                   </div>
                 </div>
@@ -161,7 +237,7 @@ export default function Dashboard() {
         <Card className="bg-white shadow-sm border border-slate-200">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg font-semibold text-slate-900">
-              Check-ins by Business
+              Check-ins by Event
             </CardTitle>
             <select className="text-sm border border-slate-300 rounded-lg px-3 py-1">
               <option>Last 30 days</option>
@@ -173,7 +249,7 @@ export default function Dashboard() {
             <ChartContainer config={chartConfig} className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={checkinData || []}>
-                  <XAxis dataKey="businessName" />
+                  <XAxis dataKey="eventName" />
                   <YAxis />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Bar dataKey="checkins" fill="var(--color-checkins)" />
@@ -200,7 +276,12 @@ export default function Dashboard() {
                   <XAxis dataKey="date" />
                   <YAxis />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Line type="monotone" dataKey="rsvps" stroke="var(--color-rsvps)" strokeWidth={2} />
+                  <Line
+                    type="monotone"
+                    dataKey="rsvps"
+                    stroke="var(--color-rsvps)"
+                    strokeWidth={2}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </ChartContainer>
@@ -211,54 +292,38 @@ export default function Dashboard() {
       {/* Recent Activity */}
       <Card className="bg-white shadow-sm border border-slate-200">
         <CardHeader>
-          <CardTitle className="text-lg font-semibold text-slate-900">Recent Activity</CardTitle>
+          <CardTitle className="text-lg font-semibold text-slate-900">
+            Recent Activity
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mt-1">
-                <Calendar className="w-4 h-4 text-blue-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm text-slate-900">
-                  New event created: <span className="font-medium">Summer Jazz Festival</span>
-                </p>
-                <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
-                  <Clock className="w-3 h-3" />
-                  2 hours ago
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start space-x-3">
-              <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mt-1">
-                <MapPin className="w-4 h-4 text-emerald-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm text-slate-900">
-                  Business marked as featured: <span className="font-medium">Downtown Coffee Co.</span>
-                </p>
-                <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
-                  <Clock className="w-3 h-3" />
-                  4 hours ago
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start space-x-3">
-              <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mt-1">
-                <Gift className="w-4 h-4 text-purple-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm text-slate-900">
-                  New reward added: <span className="font-medium">Free Coffee - 100 points</span>
-                </p>
-                <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
-                  <Clock className="w-3 h-3" />
-                  6 hours ago
-                </p>
-              </div>
-            </div>
+            {recentActivity?.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center py-4">
+                No recent activity to display
+              </p>
+            ) : (
+              recentActivity?.map((activity: any, index: number) => (
+                <div key={index} className="flex items-start space-x-3">
+                  <div
+                    className={`w-8 h-8 ${getActivityIconBg(
+                      activity.icon
+                    )} rounded-full flex items-center justify-center mt-1`}
+                  >
+                    {getActivityIcon(activity.icon)}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm text-slate-900">
+                      {activity.description}
+                    </p>
+                    <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
+                      <Clock className="w-3 h-3" />
+                      {formatTimeAgo(activity.timestamp)}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </CardContent>
       </Card>

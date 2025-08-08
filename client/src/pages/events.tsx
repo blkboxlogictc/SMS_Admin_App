@@ -30,12 +30,25 @@ export default function Events() {
     },
   });
 
+  const { data: rsvpCounts } = useQuery({
+    queryKey: ["/api/events/rsvp-counts"],
+    queryFn: async () => {
+      const response = await fetch("/api/events/rsvp-counts", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to fetch RSVP counts");
+      return response.json();
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/events/${id}`);
     },
     onSuccess: () => {
+      // Force refetch of events data
       queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+      queryClient.refetchQueries({ queryKey: ["/api/events"] });
       toast({
         title: "Success",
         description: "Event deleted successfully",
@@ -66,22 +79,55 @@ export default function Events() {
     setIsModalOpen(true);
   };
 
-  const filteredEvents = events?.filter((event: Event) =>
-    event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    event.location.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || [];
+  const filteredEvents =
+    events?.filter(
+      (event: Event) =>
+        event.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        event.location?.toLowerCase().includes(searchTerm.toLowerCase())
+    ) || [];
+
+  const getEventStatus = (eventDate: string) => {
+    const now = new Date();
+
+    // Parse the stored date as Eastern Time (no timezone conversion)
+    const eventDateString = eventDate.toString();
+    const [datePart] = eventDateString.split("T");
+    const [year, month, day] = datePart.split("-");
+    const eventDay = new Date(
+      parseInt(year),
+      parseInt(month) - 1,
+      parseInt(day)
+    );
+
+    // Reset time to start of day for date comparison
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    if (eventDay < today) {
+      return "Past";
+    } else if (eventDay > today) {
+      return "Upcoming";
+    } else {
+      return "Today";
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "upcoming":
-        return "bg-green-100 text-green-800";
-      case "ongoing":
-        return "bg-blue-100 text-blue-800";
-      case "completed":
+      case "Past":
         return "bg-gray-100 text-gray-800";
+      case "Today":
+        return "bg-blue-100 text-blue-800";
+      case "Upcoming":
+        return "bg-green-100 text-green-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
+  };
+
+  const getRsvpCount = (eventId: number) => {
+    if (!rsvpCounts) return 0;
+    const rsvpData = rsvpCounts.find((item: any) => item.eventId === eventId);
+    return rsvpData ? rsvpData.rsvpCount : 0;
   };
 
   if (isLoading) {
@@ -92,7 +138,10 @@ export default function Events() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-slate-900">Events Management</h2>
-        <Button onClick={handleCreate} className="bg-blue-600 hover:bg-blue-700">
+        <Button
+          onClick={handleCreate}
+          className="bg-blue-600 hover:bg-blue-700"
+        >
           <Plus className="w-4 h-4 mr-2" />
           Create Event
         </Button>
@@ -155,8 +204,12 @@ export default function Events() {
             <tbody className="divide-y divide-slate-200">
               {filteredEvents.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
-                    No events found. {searchTerm && "Try adjusting your search."}
+                  <td
+                    colSpan={6}
+                    className="px-6 py-8 text-center text-slate-500"
+                  >
+                    No events found.{" "}
+                    {searchTerm && "Try adjusting your search."}
                   </td>
                 </tr>
               ) : (
@@ -167,12 +220,14 @@ export default function Events() {
                         {event.imageUrl && (
                           <img
                             src={event.imageUrl}
-                            alt={event.title}
+                            alt={event.name}
                             className="w-12 h-12 rounded-lg object-cover"
                           />
                         )}
                         <div>
-                          <p className="font-medium text-slate-900">{event.title}</p>
+                          <p className="font-medium text-slate-900">
+                            {event.name}
+                          </p>
                           <p className="text-sm text-slate-500 line-clamp-1">
                             {event.description}
                           </p>
@@ -181,22 +236,61 @@ export default function Events() {
                     </td>
                     <td className="px-6 py-4">
                       <p className="text-sm text-slate-900">
-                        {new Date(event.date).toLocaleDateString()}
+                        {(() => {
+                          // Parse the stored date as Eastern Time (no timezone conversion)
+                          const eventDateString = event.eventDate.toString();
+                          const [datePart, timePart] =
+                            eventDateString.split("T");
+                          const [year, month, day] = datePart.split("-");
+                          const localDate = new Date(
+                            parseInt(year),
+                            parseInt(month) - 1,
+                            parseInt(day)
+                          );
+                          return localDate.toLocaleDateString("en-US");
+                        })()}
                       </p>
-                      <p className="text-sm text-slate-500">{event.time}</p>
+                      <p className="text-sm text-slate-500">
+                        {(() => {
+                          // Parse the stored time as Eastern Time (no timezone conversion)
+                          const eventDateString = event.eventDate.toString();
+                          const [datePart, timePart] =
+                            eventDateString.split("T");
+                          if (timePart) {
+                            const [hours, minutes] = timePart.split(":");
+                            const hour24 = parseInt(hours);
+                            const hour12 =
+                              hour24 === 0
+                                ? 12
+                                : hour24 > 12
+                                ? hour24 - 12
+                                : hour24;
+                            const ampm = hour24 >= 12 ? "PM" : "AM";
+                            return `${hour12}:${minutes} ${ampm}`;
+                          }
+                          return "";
+                        })()}
+                      </p>
                     </td>
                     <td className="px-6 py-4">
                       <p className="text-sm text-slate-900">{event.location}</p>
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-sm font-medium text-slate-900">
-                        {event.rsvpCount}
+                        {getRsvpCount(event.id)}
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <Badge className={getStatusColor(event.status || "upcoming")}>
-                        {(event.status || "upcoming").charAt(0).toUpperCase() + (event.status || "upcoming").slice(1)}
-                      </Badge>
+                      {(() => {
+                        const status = getEventStatus(
+                          event.eventDate.toString()
+                        );
+                        return (
+                          <Badge className={getStatusColor(status)}>
+                            {status}
+                          </Badge>
+                        );
+                      })()}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-2">

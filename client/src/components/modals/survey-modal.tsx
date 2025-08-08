@@ -6,9 +6,27 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { insertSurveySchema } from "@shared/schema";
@@ -17,14 +35,15 @@ import { z } from "zod";
 import { getAuthToken } from "@/lib/supabase";
 
 const questionSchema = z.object({
-  text: z.string().min(1, "Question text is required"),
-  type: z.enum(["text", "rating", "multiple_choice", "yes_no"]),
+  question: z.string().min(1, "Question text is required"),
+  type: z.enum(["text", "rating", "multiple_choice", "checkbox", "yes_no"]),
   options: z.array(z.string()).optional(),
 });
 
 const surveyFormSchema = insertSurveySchema.extend({
-  questions: z.array(questionSchema).min(1, "At least one question is required"),
-  businessId: z.coerce.number().optional(),
+  questions: z
+    .array(questionSchema)
+    .min(1, "At least one question is required"),
 });
 
 type SurveyForm = z.infer<typeof surveyFormSchema>;
@@ -56,10 +75,9 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
     defaultValues: {
       title: "",
       description: "",
-      type: "satisfaction",
-      questions: [{ text: "", type: "text" }],
-      businessId: undefined,
-      active: true,
+      questions: [{ question: "", type: "text" }],
+      rewardPoints: 10,
+      isActive: true,
     },
   });
 
@@ -70,7 +88,19 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
 
   const createMutation = useMutation({
     mutationFn: async (data: SurveyForm) => {
-      return apiRequest("POST", "/api/surveys", data);
+      // Transform questions to include IDs and convert to JSON string for database storage
+      const questionsWithIds = data.questions.map((q, index) => ({
+        id: index + 1,
+        question: q.question,
+        type: q.type,
+        options: q.options || [],
+      }));
+
+      const surveyData = {
+        ...data,
+        questions: JSON.stringify(questionsWithIds),
+      };
+      return apiRequest("POST", "/api/surveys", surveyData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/surveys"] });
@@ -92,7 +122,19 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
 
   const updateMutation = useMutation({
     mutationFn: async (data: SurveyForm) => {
-      return apiRequest("PUT", `/api/surveys/${survey!.id}`, data);
+      // Transform questions to include IDs and convert to JSON string for database storage
+      const questionsWithIds = data.questions.map((q, index) => ({
+        id: index + 1,
+        question: q.question,
+        type: q.type,
+        options: q.options || [],
+      }));
+
+      const surveyData = {
+        ...data,
+        questions: JSON.stringify(questionsWithIds),
+      };
+      return apiRequest("PUT", `/api/surveys/${survey!.id}`, surveyData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/surveys"] });
@@ -114,30 +156,46 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
 
   useEffect(() => {
     if (survey) {
-      const questions = Array.isArray(survey.questions) 
-        ? survey.questions.map((q: any) => ({
-            text: q.text || q.question || "",
-            type: (q.type === "text" || q.type === "rating" || q.type === "multiple_choice" || q.type === "yes_no") ? q.type : "text",
-            options: q.options || [],
-          }))
-        : [{ text: "", type: "text" as const }];
+      let questions = [];
+      try {
+        const parsedQuestions =
+          typeof survey.questions === "string"
+            ? JSON.parse(survey.questions)
+            : Array.isArray(survey.questions)
+            ? survey.questions
+            : [];
+
+        questions = parsedQuestions.map((q: any) => ({
+          question: q.question || q.text || "",
+          type:
+            q.type === "text" ||
+            q.type === "rating" ||
+            q.type === "multiple_choice" ||
+            q.type === "checkbox" ||
+            q.type === "yes_no"
+              ? q.type
+              : "text",
+          options: q.options || [],
+        }));
+      } catch (e) {
+        questions = [{ question: "", type: "text" as const }];
+      }
 
       form.reset({
         title: survey.title,
         description: survey.description || "",
-        type: survey.type,
-        questions,
-        businessId: survey.businessId || undefined,
-        active: survey.active,
+        questions:
+          questions.length > 0 ? questions : [{ question: "", type: "text" }],
+        rewardPoints: survey.rewardPoints || 10,
+        isActive: survey.isActive ?? true,
       });
     } else {
       form.reset({
         title: "",
         description: "",
-        type: "satisfaction",
-        questions: [{ text: "", type: "text" }],
-        businessId: undefined,
-        active: true,
+        questions: [{ question: "", type: "text" }],
+        rewardPoints: 10,
+        isActive: true,
       });
     }
   }, [survey, form]);
@@ -151,7 +209,7 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
   }
 
   const addQuestion = () => {
-    append({ text: "", type: "text" });
+    append({ question: "", type: "text" });
   };
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
@@ -178,7 +236,10 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
                         Survey Title *
                       </FormLabel>
                       <FormControl>
-                        <Input placeholder="Customer Satisfaction Survey" {...field} />
+                        <Input
+                          placeholder="Customer Satisfaction Survey"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -211,24 +272,23 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
 
               <FormField
                 control={form.control}
-                name="type"
+                name="rewardPoints"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-sm font-medium text-slate-700">
-                      Survey Type *
+                      Reward Points
                     </FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select survey type" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="satisfaction">Satisfaction</SelectItem>
-                        <SelectItem value="feedback">Feedback</SelectItem>
-                        <SelectItem value="rating">Rating</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        placeholder="10"
+                        {...field}
+                        onChange={(e) =>
+                          field.onChange(parseInt(e.target.value) || 10)
+                        }
+                        value={field.value || 10}
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -236,28 +296,23 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
 
               <FormField
                 control={form.control}
-                name="businessId"
+                name="isActive"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm font-medium text-slate-700">
-                      Business (Optional)
-                    </FormLabel>
-                    <Select onValueChange={(value) => field.onChange(value ? parseInt(value) : undefined)} defaultValue={field.value?.toString()}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select business or leave for all" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="">All Businesses</SelectItem>
-                        {businesses?.map((business: Business) => (
-                          <SelectItem key={business.id} value={business.id.toString()}>
-                            {business.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-base">Active Survey</FormLabel>
+                      <div className="text-sm text-muted-foreground">
+                        Make this survey available to users
+                      </div>
+                    </div>
+                    <FormControl>
+                      <input
+                        type="checkbox"
+                        checked={field.value}
+                        onChange={field.onChange}
+                        className="h-4 w-4"
+                      />
+                    </FormControl>
                   </FormItem>
                 )}
               />
@@ -266,7 +321,9 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
             {/* Questions Section */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-slate-900">Questions</h3>
+                <h3 className="text-lg font-medium text-slate-900">
+                  Questions
+                </h3>
                 <Button
                   type="button"
                   variant="outline"
@@ -280,9 +337,14 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
 
               <div className="space-y-4">
                 {fields.map((field, index) => (
-                  <div key={field.id} className="border border-slate-200 rounded-lg p-4">
+                  <div
+                    key={field.id}
+                    className="border border-slate-200 rounded-lg p-4"
+                  >
                     <div className="flex items-center justify-between mb-4">
-                      <h4 className="font-medium text-slate-900">Question {index + 1}</h4>
+                      <h4 className="font-medium text-slate-900">
+                        Question {index + 1}
+                      </h4>
                       {fields.length > 1 && (
                         <Button
                           type="button"
@@ -300,14 +362,17 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
                       <div className="md:col-span-2">
                         <FormField
                           control={form.control}
-                          name={`questions.${index}.text`}
+                          name={`questions.${index}.question`}
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel className="text-sm font-medium text-slate-700">
                                 Question Text *
                               </FormLabel>
                               <FormControl>
-                                <Input placeholder="How would you rate your experience?" {...field} />
+                                <Input
+                                  placeholder="How would you rate your experience?"
+                                  {...field}
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -323,7 +388,10 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
                             <FormLabel className="text-sm font-medium text-slate-700">
                               Question Type *
                             </FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <Select
+                              onValueChange={field.onChange}
+                              defaultValue={field.value}
+                            >
                               <FormControl>
                                 <SelectTrigger>
                                   <SelectValue placeholder="Select type" />
@@ -331,8 +399,15 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
                               </FormControl>
                               <SelectContent>
                                 <SelectItem value="text">Text</SelectItem>
-                                <SelectItem value="rating">Rating Scale</SelectItem>
-                                <SelectItem value="multiple_choice">Multiple Choice</SelectItem>
+                                <SelectItem value="rating">
+                                  Rating Scale
+                                </SelectItem>
+                                <SelectItem value="multiple_choice">
+                                  Multiple Choice
+                                </SelectItem>
+                                <SelectItem value="checkbox">
+                                  Checkbox (Multiple Select)
+                                </SelectItem>
                                 <SelectItem value="yes_no">Yes/No</SelectItem>
                               </SelectContent>
                             </Select>
@@ -342,7 +417,9 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
                       />
                     </div>
 
-                    {form.watch(`questions.${index}.type`) === "multiple_choice" && (
+                    {(form.watch(`questions.${index}.type`) ===
+                      "multiple_choice" ||
+                      form.watch(`questions.${index}.type`) === "checkbox") && (
                       <div className="mt-4">
                         <FormField
                           control={form.control}
@@ -351,13 +428,27 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
                             <FormItem>
                               <FormLabel className="text-sm font-medium text-slate-700">
                                 Options (one per line)
+                                {form.watch(`questions.${index}.type`) ===
+                                  "checkbox" && (
+                                  <span className="text-xs text-slate-500 ml-1">
+                                    (users can select multiple)
+                                  </span>
+                                )}
                               </FormLabel>
                               <FormControl>
-                                <Textarea
-                                  rows={3}
-                                  placeholder="Option 1&#10;Option 2&#10;Option 3"
-                                  value={field.value?.join('\n') || ''}
-                                  onChange={(e) => field.onChange(e.target.value.split('\n').filter(Boolean))}
+                                <textarea
+                                  rows={4}
+                                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                  placeholder="Option 1
+Option 2
+Option 3"
+                                  defaultValue={field.value?.join("\n") || ""}
+                                  onBlur={(e) => {
+                                    const options = e.target.value
+                                      .split("\n")
+                                      .filter((line) => line.trim() !== "");
+                                    field.onChange(options);
+                                  }}
                                 />
                               </FormControl>
                               <FormMessage />
@@ -375,12 +466,16 @@ export function SurveyModal({ isOpen, onClose, survey }: SurveyModalProps) {
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
               </Button>
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 disabled={isLoading}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                {isLoading ? "Saving..." : survey ? "Update Survey" : "Create Survey"}
+                {isLoading
+                  ? "Saving..."
+                  : survey
+                  ? "Update Survey"
+                  : "Create Survey"}
               </Button>
             </div>
           </form>

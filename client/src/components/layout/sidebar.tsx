@@ -13,9 +13,7 @@ import {
   User,
 } from "lucide-react";
 
-const navigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-];
+const navigation = [{ name: "Dashboard", href: "/", icon: LayoutDashboard }];
 
 const contentManagement = [
   { name: "Events", href: "/events", icon: Calendar },
@@ -26,6 +24,12 @@ const contentManagement = [
 
 const analytics = [
   { name: "Detailed Analytics", href: "/analytics", icon: BarChart3 },
+  {
+    name: "Geographic Analytics",
+    href: "/analytics/geographic",
+    icon: BarChart3,
+  },
+  { name: "Sales Analytics", href: "/analytics/sales", icon: BarChart3 },
 ];
 
 export function Sidebar() {

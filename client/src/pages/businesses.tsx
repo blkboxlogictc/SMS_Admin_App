@@ -1,11 +1,21 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Star, Edit, MapPin, CheckCircle, Calendar } from "lucide-react";
+import {
+  Search,
+  Star,
+  Edit,
+  MapPin,
+  CheckCircle,
+  Calendar,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { BusinessModal } from "@/components/modals/business-modal";
 import { getAuthToken } from "@/lib/supabase";
 import { apiRequest } from "@/lib/queryClient";
 import type { Business } from "@shared/schema";
@@ -13,6 +23,10 @@ import type { Business } from "@shared/schema";
 export default function Businesses() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All Categories");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(
+    null
+  );
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const token = getAuthToken();
@@ -28,41 +42,61 @@ export default function Businesses() {
     },
   });
 
-  const toggleFeaturedMutation = useMutation({
-    mutationFn: async (business: Business) => {
-      await apiRequest("PUT", `/api/businesses/${business.id}`, {
-        featured: !business.featured,
-      });
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/businesses/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/businesses"] });
       toast({
         title: "Success",
-        description: "Business featured status updated",
+        description: "Business deleted successfully",
       });
     },
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to update business",
+        description: "Failed to delete business",
         variant: "destructive",
       });
     },
   });
 
-  const handleToggleFeatured = (business: Business) => {
-    toggleFeaturedMutation.mutate(business);
+  const handleEdit = (business: Business) => {
+    setSelectedBusiness(business);
+    setIsModalOpen(true);
   };
 
-  const filteredBusinesses = businesses?.filter((business: Business) => {
-    const matchesSearch = business.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         business.address?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === "All Categories" || 
-                           business.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  }) || [];
+  const handleDelete = async (id: number) => {
+    if (confirm("Are you sure you want to delete this business?")) {
+      deleteMutation.mutate(id);
+    }
+  };
 
-  const categories = ["All Categories", ...Array.from(new Set(businesses?.map((b: Business) => b.category).filter(Boolean) || []))];
+  const handleCreate = () => {
+    setSelectedBusiness(null);
+    setIsModalOpen(true);
+  };
+
+  const filteredBusinesses =
+    businesses?.filter((business: Business) => {
+      const matchesSearch =
+        business.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        business.address?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCategory =
+        selectedCategory === "All Categories" ||
+        business.category === selectedCategory;
+      return matchesSearch && matchesCategory;
+    }) || [];
+
+  const categories: string[] = [
+    "All Categories",
+    ...(Array.from(
+      new Set(
+        businesses?.map((b: Business) => b.category).filter(Boolean) || []
+      )
+    ) as string[]),
+  ];
 
   if (isLoading) {
     return <div>Loading businesses...</div>;
@@ -71,8 +105,17 @@ export default function Businesses() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-slate-900">Businesses Management</h2>
+        <h2 className="text-2xl font-bold text-slate-900">
+          Businesses Management
+        </h2>
         <div className="flex items-center space-x-3">
+          <Button
+            onClick={handleCreate}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Business
+          </Button>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
             <Input
@@ -83,13 +126,15 @@ export default function Businesses() {
               className="pl-10"
             />
           </div>
-          <select 
+          <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
             className="px-3 py-2 border border-slate-300 rounded-lg"
           >
             {categories.map((category: string) => (
-              <option key={category} value={category}>{category}</option>
+              <option key={category} value={category}>
+                {category}
+              </option>
             ))}
           </select>
         </div>
@@ -108,39 +153,39 @@ export default function Businesses() {
           filteredBusinesses.map((business: Business) => (
             <Card key={business.id} className="overflow-hidden">
               {business.imageUrl && (
-                <img 
-                  src={business.imageUrl} 
+                <img
+                  src={business.imageUrl}
                   alt={business.name}
                   className="w-full h-48 object-cover"
                 />
               )}
-              
+
               <CardContent className="p-6">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <h3 className="font-semibold text-slate-900">{business.name}</h3>
-                    <p className="text-sm text-slate-600">{business.category}</p>
+                    <h3 className="font-semibold text-slate-900">
+                      {business.name}
+                    </h3>
+                    <p className="text-sm text-slate-600">
+                      {business.category}
+                    </p>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleToggleFeatured(business)}
-                      className={`${
-                        business.featured 
-                          ? "bg-amber-100 text-amber-600 hover:bg-amber-200" 
-                          : "text-slate-400 hover:bg-slate-100"
-                      } rounded-lg`}
-                      title="Toggle Featured"
+                      onClick={() => handleEdit(business)}
+                      className="text-slate-600 hover:bg-slate-100 rounded-lg"
                     >
-                      <Star className={`w-4 h-4 ${business.featured ? "fill-current" : ""}`} />
+                      <Edit className="w-4 h-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-slate-600 hover:bg-slate-100 rounded-lg"
+                      onClick={() => handleDelete(business.id)}
+                      className="text-red-600 hover:bg-red-100 rounded-lg"
                     >
-                      <Edit className="w-4 h-4" />
+                      <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
                 </div>
@@ -164,18 +209,19 @@ export default function Businesses() {
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <Badge className={business.active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
-                      {business.active ? "Active" : "Inactive"}
+                    <Badge
+                      className={
+                        business.isOpen
+                          ? "bg-green-100 text-green-800"
+                          : "bg-gray-100 text-gray-800"
+                      }
+                    >
+                      {business.isOpen ? "Open" : "Closed"}
                     </Badge>
-                    {business.featured && (
-                      <Badge className="bg-amber-100 text-amber-800">
-                        Featured
-                      </Badge>
-                    )}
                   </div>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     className="text-blue-600 hover:text-blue-700"
                   >
                     View Analytics
@@ -186,6 +232,12 @@ export default function Businesses() {
           ))
         )}
       </div>
+
+      <BusinessModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        business={selectedBusiness}
+      />
     </div>
   );
 }

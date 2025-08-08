@@ -12,6 +12,9 @@ import Rewards from "@/pages/rewards";
 import Surveys from "@/pages/surveys";
 import Businesses from "@/pages/businesses";
 import Analytics from "@/pages/analytics";
+import SurveyAnalytics from "@/pages/survey-analytics";
+import GeographicAnalytics from "@/pages/geographic-analytics";
+import SalesAnalytics from "@/pages/sales-analytics";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRoutes() {
@@ -22,8 +25,11 @@ function AuthenticatedRoutes() {
         <Route path="/events" component={Events} />
         <Route path="/rewards" component={Rewards} />
         <Route path="/surveys" component={Surveys} />
+        <Route path="/surveys/:id/analytics" component={SurveyAnalytics} />
         <Route path="/businesses" component={Businesses} />
         <Route path="/analytics" component={Analytics} />
+        <Route path="/analytics/geographic" component={GeographicAnalytics} />
+        <Route path="/analytics/sales" component={SalesAnalytics} />
         <Route component={NotFound} />
       </Switch>
     </AdminLayout>

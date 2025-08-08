@@ -1,21 +1,35 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Edit, Trash2, BarChart3, Building, List, PieChart } from "lucide-react";
+import { useLocation } from "wouter";
+import {
+  Plus,
+  Edit,
+  Trash2,
+  BarChart3,
+  Building,
+  List,
+  PieChart,
+  Eye,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { SurveyModal } from "@/components/modals/survey-modal";
+import { SurveyPreviewModal } from "@/components/modals/survey-preview-modal";
 import { getAuthToken } from "@/lib/supabase";
 import { apiRequest } from "@/lib/queryClient";
 import type { Survey } from "@shared/schema";
 
 export default function Surveys() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [selectedSurvey, setSelectedSurvey] = useState<Survey | null>(null);
+  const [previewSurvey, setPreviewSurvey] = useState<Survey | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const token = getAuthToken();
+  const [, setLocation] = useLocation();
 
   const { data: surveys, isLoading } = useQuery({
     queryKey: ["/api/surveys"],
@@ -64,6 +78,15 @@ export default function Surveys() {
     setIsModalOpen(true);
   };
 
+  const handlePreview = (survey: Survey) => {
+    setPreviewSurvey(survey);
+    setIsPreviewOpen(true);
+  };
+
+  const handleAnalytics = (survey: Survey) => {
+    setLocation(`/surveys/${survey.id}/analytics`);
+  };
+
   if (isLoading) {
     return <div>Loading surveys...</div>;
   }
@@ -71,8 +94,13 @@ export default function Surveys() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-slate-900">Surveys Management</h2>
-        <Button onClick={handleCreate} className="bg-blue-600 hover:bg-blue-700">
+        <h2 className="text-2xl font-bold text-slate-900">
+          Surveys Management
+        </h2>
+        <Button
+          onClick={handleCreate}
+          className="bg-blue-600 hover:bg-blue-700"
+        >
           <Plus className="w-4 h-4 mr-2" />
           Create Survey
         </Button>
@@ -84,7 +112,9 @@ export default function Surveys() {
           <Card>
             <CardContent className="text-center py-12">
               <BarChart3 className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-              <p className="text-slate-500">No surveys found. Create your first survey to get started.</p>
+              <p className="text-slate-500">
+                No surveys found. Create your first survey to get started.
+              </p>
             </CardContent>
           </Card>
         ) : (
@@ -93,31 +123,55 @@ export default function Surveys() {
               <CardContent className="p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-2">{survey.title}</h3>
-                    <p className="text-sm text-slate-600">{survey.description}</p>
+                    <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                      {survey.title}
+                    </h3>
+                    <p className="text-sm text-slate-600">
+                      {survey.description}
+                    </p>
                     <div className="flex items-center space-x-4 mt-3">
                       <span className="text-sm text-slate-500 flex items-center">
                         <Building className="w-4 h-4 mr-1" />
-                        Business: {survey.businessId ? `Business #${survey.businessId}` : "All Businesses"}
+                        Business: All Businesses
                       </span>
                       <span className="text-sm text-slate-500 flex items-center">
                         <List className="w-4 h-4 mr-1" />
-                        {Array.isArray(survey.questions) ? survey.questions.length : 0} questions
+                        {(() => {
+                          try {
+                            const questions =
+                              typeof survey.questions === "string"
+                                ? JSON.parse(survey.questions)
+                                : Array.isArray(survey.questions)
+                                ? survey.questions
+                                : [];
+                            return questions.length;
+                          } catch (e) {
+                            return 0;
+                          }
+                        })()}{" "}
+                        questions
                       </span>
                       <span className="text-sm text-slate-500 flex items-center">
-                        <PieChart className="w-4 h-4 mr-1" />
-                        {survey.responseCount} responses
+                        <PieChart className="w-4 h-4 mr-1" />0 responses
                       </span>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Badge className={survey.active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
-                      {survey.active ? "Active" : "Inactive"}
+                    <Badge
+                      className={
+                        survey.isActive
+                          ? "bg-green-100 text-green-800"
+                          : "bg-gray-100 text-gray-800"
+                      }
+                    >
+                      {survey.isActive ? "Active" : "Inactive"}
                     </Badge>
                     <Button
                       variant="ghost"
                       size="sm"
+                      onClick={() => handleAnalytics(survey)}
                       className="text-blue-600 hover:text-blue-700"
+                      title="View Analytics"
                     >
                       <BarChart3 className="w-4 h-4" />
                     </Button>
@@ -142,25 +196,68 @@ export default function Surveys() {
 
                 {/* Survey Questions Preview */}
                 <div className="border-t border-slate-200 pt-4">
-                  <h4 className="text-sm font-medium text-slate-900 mb-3">Questions Preview:</h4>
+                  <h4 className="text-sm font-medium text-slate-900 mb-3">
+                    Questions Preview:
+                  </h4>
                   <div className="space-y-2">
-                    {Array.isArray(survey.questions) && survey.questions.length > 0 ? (
-                      survey.questions.slice(0, 3).map((question: any, index: number) => (
-                        <div key={index} className="text-sm">
-                          <span className="text-slate-600">{index + 1}.</span>
-                          <span className="text-slate-900 ml-2">
-                            {question.text || question.question || "Question text"} ({question.type || "text"})
-                          </span>
+                    {(() => {
+                      let questions = [];
+                      try {
+                        questions =
+                          typeof survey.questions === "string"
+                            ? JSON.parse(survey.questions)
+                            : Array.isArray(survey.questions)
+                            ? survey.questions
+                            : [];
+                      } catch (e) {
+                        questions = [];
+                      }
+
+                      return questions.length > 0 ? (
+                        <>
+                          {questions
+                            .slice(0, 3)
+                            .map((question: any, index: number) => (
+                              <div key={index} className="text-sm">
+                                <span className="text-slate-600">
+                                  {index + 1}.
+                                </span>
+                                <span className="text-slate-900 ml-2">
+                                  {question.text ||
+                                    question.question ||
+                                    "Question text"}{" "}
+                                  ({question.type || "text"})
+                                </span>
+                              </div>
+                            ))}
+                          {questions.length > 3 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-blue-600 hover:text-blue-700 mt-2"
+                              onClick={() => handlePreview(survey)}
+                            >
+                              View all {questions.length} questions →
+                            </Button>
+                          )}
+                          {questions.length <= 3 && questions.length > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-blue-600 hover:text-blue-700 mt-2"
+                              onClick={() => handlePreview(survey)}
+                            >
+                              <Eye className="w-4 h-4 mr-1" />
+                              Preview Survey
+                            </Button>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-sm text-slate-500">
+                          No questions configured
                         </div>
-                      ))
-                    ) : (
-                      <div className="text-sm text-slate-500">No questions configured</div>
-                    )}
-                    {Array.isArray(survey.questions) && survey.questions.length > 3 && (
-                      <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 mt-2">
-                        View all {survey.questions.length} questions →
-                      </Button>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
               </CardContent>
@@ -173,6 +270,12 @@ export default function Surveys() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         survey={selectedSurvey}
+      />
+
+      <SurveyPreviewModal
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        survey={previewSurvey}
       />
     </div>
   );

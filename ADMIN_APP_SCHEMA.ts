@@ -15,6 +15,7 @@ import { z } from "zod";
 // STUART MAIN STREET APP - COMPLETE DATABASE SCHEMA FOR ADMIN APP
 // ============================================================================
 // This schema matches the production Supabase database for the Stuart Main Street App
+// Copy this entire file to your admin app's schema file
 // ============================================================================
 
 // Session storage table (for Supabase Auth compatibility)
@@ -51,7 +52,6 @@ export const businesses = pgTable("businesses", {
   hours: text("hours"), // JSON as text: {"monday":"9:00-17:00","tuesday":"9:00-17:00",...}
   imageUrl: text("image_url"),
   isOpen: boolean("is_open").default(true),
-  isFeatured: boolean("is_featured").default(false),
   waitTime: integer("wait_time"), // in minutes
   ownerId: text("owner_id"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -63,7 +63,7 @@ export const events = pgTable("events", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
-  eventDate: timestamp("event_date").notNull(),
+  date: timestamp("date").notNull(),
   location: text("location").notNull(),
   imageUrl: text("image_url"),
   organizerId: text("organizer_id"),
@@ -90,6 +90,7 @@ export const checkins = pgTable("checkins", {
   id: serial("id").primaryKey(),
   userId: text("user_id").notNull(),
   eventId: integer("event_id").notNull(),
+  pointsEarned: integer("points_earned").default(5),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -124,21 +125,6 @@ export const surveys = pgTable("surveys", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Reward items table (defines available rewards for redemption)
-export const rewardItems = pgTable("reward_items", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  description: text("description"),
-  pointThreshold: integer("point_threshold").notNull(),
-  businessId: integer("business_id"), // optional, for business-specific rewards
-  imageUrl: text("image_url"),
-  isActive: boolean("is_active").default(true),
-  expirationDate: timestamp("expiration_date"),
-  maxRedemptions: integer("max_redemptions"), // optional limit on total redemptions
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
 // Survey responses table
 export const surveyResponses = pgTable("survey_responses", {
   id: serial("id").primaryKey(),
@@ -153,8 +139,8 @@ export const surveyResponses = pgTable("survey_responses", {
 export const rewardRedemptions = pgTable("reward_redemptions", {
   id: serial("id").primaryKey(),
   userId: text("user_id").notNull(),
-  rewardItemId: integer("reward_item_id").notNull(), // references reward_items table
-  pointsRedeemed: integer("points_redeemed").notNull(),
+  pointsRedeemed: integer("points_redeemed").notNull().default(100),
+  rewardType: text("reward_type"),
   businessId: integer("business_id"), // If redeemed at specific business
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -181,7 +167,6 @@ export const businessesRelations = relations(businesses, ({ one, many }) => ({
     references: [users.id],
   }),
   promotions: many(promotions),
-  rewardItems: many(rewardItems),
   rewardRedemptions: many(rewardRedemptions),
 }));
 
@@ -199,14 +184,6 @@ export const promotionsRelations = relations(promotions, ({ one }) => ({
     fields: [promotions.businessId],
     references: [businesses.id],
   }),
-}));
-
-export const rewardItemsRelations = relations(rewardItems, ({ one, many }) => ({
-  business: one(businesses, {
-    fields: [rewardItems.businessId],
-    references: [businesses.id],
-  }),
-  redemptions: many(rewardRedemptions),
 }));
 
 export const checkinsRelations = relations(checkins, ({ one }) => ({
@@ -262,10 +239,6 @@ export const rewardRedemptionsRelations = relations(rewardRedemptions, ({ one })
     fields: [rewardRedemptions.userId],
     references: [users.id],
   }),
-  rewardItem: one(rewardItems, {
-    fields: [rewardRedemptions.rewardItemId],
-    references: [rewardItems.id],
-  }),
   business: one(businesses, {
     fields: [rewardRedemptions.businessId],
     references: [businesses.id],
@@ -291,19 +264,6 @@ export const insertEventSchema = createInsertSchema(events).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-}).extend({
-  // Override eventDate to handle Eastern Time properly
-  eventDate: z.string().transform((str) => {
-    // Determine if we're in EST (-05:00) or EDT (-04:00) based on current date
-    const now = new Date();
-    const isEDT = now.getTimezoneOffset() === 240; // EDT is UTC-4 (240 minutes)
-    const offset = isEDT ? '-04:00' : '-05:00';
-    
-    // Create a Date object that represents Eastern Time by appending the timezone offset
-    const easternTimeString = str + offset;
-    console.log(`Timezone transform: ${str} -> ${easternTimeString}`);
-    return new Date(easternTimeString);
-  }),
 });
 
 export const insertPromotionSchema = createInsertSchema(promotions).omit({
@@ -325,15 +285,6 @@ export const insertEventRsvpSchema = createInsertSchema(eventRsvps).omit({
 export const insertRewardSchema = createInsertSchema(rewards).omit({
   id: true,
   createdAt: true,
-});
-
-export const insertRewardItemSchema = createInsertSchema(rewardItems).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).extend({
-  // Override expirationDate to accept ISO string and convert to Date
-  expirationDate: z.string().nullable().optional().transform((str) => str ? new Date(str) : null),
 });
 
 export const insertSurveySchema = createInsertSchema(surveys).omit({
@@ -358,7 +309,6 @@ export const insertRewardRedemptionSchema = createInsertSchema(rewardRedemptions
 
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
 export type Business = typeof businesses.$inferSelect;
 export type InsertBusiness = z.infer<typeof insertBusinessSchema>;
 export type Event = typeof events.$inferSelect;
@@ -371,8 +321,6 @@ export type EventRsvp = typeof eventRsvps.$inferSelect;
 export type InsertEventRsvp = z.infer<typeof insertEventRsvpSchema>;
 export type Reward = typeof rewards.$inferSelect;
 export type InsertReward = z.infer<typeof insertRewardSchema>;
-export type RewardItem = typeof rewardItems.$inferSelect;
-export type InsertRewardItem = z.infer<typeof insertRewardItemSchema>;
 export type Survey = typeof surveys.$inferSelect;
 export type InsertSurvey = z.infer<typeof insertSurveySchema>;
 export type SurveyResponse = typeof surveyResponses.$inferSelect;
@@ -398,3 +346,109 @@ export type EventStatus = "upcoming" | "ongoing" | "completed";
 
 // Survey status for admin management
 export type SurveyStatus = "active" | "inactive" | "draft";
+
+// Analytics aggregation types
+export interface UserStats {
+  totalUsers: number;
+  patronCount: number;
+  businessCount: number;
+  adminCount: number;
+  newUsersThisMonth: number;
+}
+
+export interface BusinessStats {
+  totalBusinesses: number;
+  activeBusinesses: number;
+  averageWaitTime: number;
+  businessesByCategory: Record<string, number>;
+}
+
+export interface EventStats {
+  totalEvents: number;
+  upcomingEvents: number;
+  totalRsvps: number;
+  totalCheckins: number;
+  averageAttendanceRate: number;
+}
+
+export interface RewardStats {
+  totalPointsDistributed: number;
+  totalRedemptions: number;
+  pointsBySource: Record<RewardSource, number>;
+  topEarners: Array<{ userId: string; totalPoints: number }>;
+}
+
+export interface SurveyStats {
+  totalSurveys: number;
+  activeSurveys: number;
+  totalResponses: number;
+  averageResponseRate: number;
+}
+
+// ============================================================================
+// USAGE NOTES FOR ADMIN APP
+// ============================================================================
+
+/*
+INSTALLATION REQUIREMENTS:
+npm install drizzle-orm drizzle-zod zod @types/pg pg
+
+ENVIRONMENT VARIABLES NEEDED:
+DATABASE_URL=your_supabase_postgresql_connection_string
+
+EXAMPLE DRIZZLE CONFIG (drizzle.config.ts):
+import type { Config } from "drizzle-kit";
+
+export default {
+  schema: "./src/schema.ts", // Path to this file
+  out: "./drizzle",
+  driver: "pg",
+  dbCredentials: {
+    connectionString: process.env.DATABASE_URL!,
+  },
+} satisfies Config;
+
+EXAMPLE DATABASE CONNECTION:
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import * as schema from "./schema"; // This file
+
+const client = postgres(process.env.DATABASE_URL!);
+export const db = drizzle(client, { schema });
+
+COMMON ADMIN QUERIES:
+
+// Get all users with their business info
+const usersWithBusinesses = await db.query.users.findMany({
+  with: {
+    business: true,
+  },
+});
+
+// Get event analytics
+const eventAnalytics = await db.query.events.findMany({
+  with: {
+    rsvps: true,
+    checkins: true,
+  },
+});
+
+// Get reward distribution
+const rewardDistribution = await db.query.rewards.findMany({
+  with: {
+    user: true,
+    business: true,
+  },
+});
+
+// Get survey responses
+const surveyData = await db.query.surveys.findMany({
+  with: {
+    responses: {
+      with: {
+        user: true,
+      },
+    },
+  },
+});
+*/
