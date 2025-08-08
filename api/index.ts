@@ -20,17 +20,27 @@ import { eq, desc, count, sql } from "drizzle-orm";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
+// Initialize Supabase client with error handling
+let supabase: any = null;
+try {
+  if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+    console.log('Supabase client initialized successfully');
+  } else {
+    console.error('Missing Supabase environment variables');
   }
-);
+} catch (error) {
+  console.error('Failed to initialize Supabase client:', error);
+}
 
 // Initialize database connection for analytics queries
 function getDb() {
@@ -57,7 +67,13 @@ function getDb() {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
+    console.log('=== SERVERLESS FUNCTION START ===');
     console.log('Handler called:', req.method, req.url);
+    console.log('Environment check:');
+    console.log('- SUPABASE_URL exists:', !!process.env.SUPABASE_URL);
+    console.log('- SUPABASE_SERVICE_ROLE_KEY exists:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+    console.log('- DATABASE_URL exists:', !!process.env.DATABASE_URL);
+    console.log('- JWT_SECRET exists:', !!process.env.JWT_SECRET);
     
     // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -71,14 +87,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Handle login route
     if (req.url === '/api/auth/login' && req.method === 'POST') {
       try {
+        console.log('=== LOGIN REQUEST ===');
+        console.log('Request body:', req.body);
+        
+        if (!req.body || !req.body.email || !req.body.password) {
+          console.error('Missing email or password in request body');
+          return res.status(400).json({ message: "Email and password are required" });
+        }
+        
         const { email, password } = req.body;
         console.log('Login attempt for:', email);
+        console.log('Password provided:', !!password);
         
+        // Check if Supabase client is properly initialized
+        if (!supabase) {
+          console.error('Supabase client not initialized');
+          return res.status(500).json({ message: "Authentication service not available" });
+        }
+        
+        console.log('Attempting Supabase authentication...');
         // Authenticate with Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
+
+        console.log('Supabase auth response:');
+        console.log('- Error:', authError);
+        console.log('- User exists:', !!authData?.user);
+        console.log('- User ID:', authData?.user?.id);
+        console.log('- User metadata:', authData?.user?.user_metadata);
+        console.log('- App metadata:', authData?.user?.app_metadata);
 
         if (authError || !authData.user) {
           console.log('Authentication failed:', authError?.message);
@@ -94,6 +133,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(403).json({ message: "Admin access required" });
         }
 
+        console.log('Creating JWT token...');
         // Create JWT token
         const token = jwt.sign({
           id: authData.user.id,
@@ -101,6 +141,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           role: userRole
         }, JWT_SECRET, { expiresIn: '24h' });
         
+        console.log('Login successful, returning response');
         return res.status(200).json({
           token,
           user: {
@@ -113,9 +154,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       } catch (error) {
         console.error("Login error:", error);
+        console.error("Error stack:", error instanceof Error ? error.stack : 'No stack trace');
         return res.status(500).json({
           message: "Login failed",
-          error: error instanceof Error ? error.message : "Unknown error"
+          error: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined
         });
       }
     }
@@ -816,6 +859,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(500).json({ message: "Failed to delete business" });
         }
       }
+    }
+
+    // Health check endpoint
+    if (req.url === '/api/health' && req.method === 'GET') {
+      return res.status(200).json({
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+        environment: {
+          nodeVersion: process.version,
+          hasSupabaseUrl: !!process.env.SUPABASE_URL,
+          hasSupabaseKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+          hasDatabaseUrl: !!process.env.DATABASE_URL,
+          hasJwtSecret: !!process.env.JWT_SECRET
+        }
+      });
     }
 
     // Test endpoint
