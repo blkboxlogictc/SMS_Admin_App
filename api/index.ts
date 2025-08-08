@@ -51,9 +51,29 @@ async function getSchemas() {
   }
 }
 
+// Authentication middleware
+function authenticateToken(req: any) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return { error: 'Access token required' };
+  }
+
+  try {
+    const user = jwt.verify(token, JWT_SECRET);
+    return { user };
+  } catch (err) {
+    return { error: 'Invalid token' };
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    console.log('Handler called:', req.method, req.url);
+    console.log('=== SERVERLESS FUNCTION CALLED ===');
+    console.log('Method:', req.method);
+    console.log('URL:', req.url);
+    console.log('Headers:', req.headers);
     
     // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -120,35 +140,67 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.url === '/api/dashboard/stats' && req.method === 'GET') {
       try {
         console.log('=== DASHBOARD STATS REQUEST ===');
+        
+        // Check authentication
+        const auth = authenticateToken(req);
+        if (auth.error) {
+          console.log('Authentication failed:', auth.error);
+          return res.status(401).json({ message: auth.error });
+        }
+        console.log('Authentication successful for user:', auth.user);
+        
+        console.log('Getting database connection...');
         const db = await getDbConnection();
         const schemas = await getSchemas();
         
-        if (!db || !schemas) {
-          throw new Error('Database connection or schemas not available');
+        if (!db) {
+          console.error('Database connection failed');
+          return res.status(500).json({ message: 'Database connection failed' });
+        }
+        
+        if (!schemas) {
+          console.error('Schema loading failed');
+          return res.status(500).json({ message: 'Schema loading failed' });
         }
 
         const { checkins, events, surveyResponses, rewardRedemptions, count, sql } = schemas;
+        console.log('Schemas loaded successfully');
 
         console.log('Executing dashboard stats queries...');
+        
+        // Test each query individually with better error handling
+        console.log('Querying total checkins...');
         const [totalCheckins] = await db.select({ count: count() }).from(checkins);
+        console.log('Total checkins result:', totalCheckins);
+        
+        console.log('Querying active events...');
         const [activeEvents] = await db.select({ count: count() }).from(events).where(sql`${events.eventDate} > NOW()`);
+        console.log('Active events result:', activeEvents);
+        
+        console.log('Querying survey responses...');
         const [surveyResponsesCount] = await db.select({ count: count() }).from(surveyResponses);
+        console.log('Survey responses result:', surveyResponsesCount);
+        
+        console.log('Querying reward redemptions...');
         const [rewardsRedeemedCount] = await db.select({ count: count() }).from(rewardRedemptions);
+        console.log('Reward redemptions result:', rewardsRedeemedCount);
 
         const result = {
-          totalCheckins: totalCheckins.count,
-          activeEvents: activeEvents.count,
-          surveyResponses: surveyResponsesCount.count,
-          rewardsRedeemed: rewardsRedeemedCount.count,
+          totalCheckins: totalCheckins?.count || 0,
+          activeEvents: activeEvents?.count || 0,
+          surveyResponses: surveyResponsesCount?.count || 0,
+          rewardsRedeemed: rewardsRedeemedCount?.count || 0,
         };
         
-        console.log('Dashboard stats result:', result);
+        console.log('Dashboard stats final result:', result);
         return res.status(200).json(result);
       } catch (error) {
         console.error('Dashboard stats error:', error);
+        console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
         return res.status(500).json({
           message: "Failed to fetch dashboard stats",
-          error: error instanceof Error ? error.message : "Unknown error"
+          error: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined
         });
       }
     }
