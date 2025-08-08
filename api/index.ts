@@ -33,13 +33,26 @@ const supabase = createClient(
 );
 
 // Initialize database connection for analytics queries
-let db: any = null;
 function getDb() {
-  if (!db && process.env.DATABASE_URL) {
-    const queryClient = postgres(process.env.DATABASE_URL);
-    db = drizzle(queryClient);
+  if (!process.env.DATABASE_URL) {
+    console.error('DATABASE_URL environment variable is not set');
+    return null;
   }
-  return db;
+  
+  try {
+    console.log('Creating new database connection...');
+    const queryClient = postgres(process.env.DATABASE_URL, {
+      max: 1, // Limit connections for serverless
+      idle_timeout: 20,
+      connect_timeout: 10,
+    });
+    const db = drizzle(queryClient);
+    console.log('Database connection created successfully');
+    return db;
+  } catch (error) {
+    console.error('Failed to create database connection:', error);
+    return null;
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -110,25 +123,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Dashboard stats endpoint
     if (req.url === '/api/dashboard/stats' && req.method === 'GET') {
       try {
+        console.log('=== DASHBOARD STATS REQUEST ===');
+        console.log('Getting database connection...');
         const database = getDb();
         if (!database) {
+          console.error('Database connection failed');
           throw new Error('Database connection not available');
         }
 
+        console.log('Executing dashboard stats queries...');
         const [totalCheckins] = await database.select({ count: count() }).from(checkins);
+        console.log('Total checkins:', totalCheckins);
+        
         const [activeEvents] = await database.select({ count: count() }).from(events).where(sql`${events.eventDate} > NOW()`);
+        console.log('Active events:', activeEvents);
+        
         const [surveyResponsesCount] = await database.select({ count: count() }).from(surveyResponses);
+        console.log('Survey responses:', surveyResponsesCount);
+        
         const [rewardsRedeemedCount] = await database.select({ count: count() }).from(rewardRedemptions);
+        console.log('Rewards redeemed:', rewardsRedeemedCount);
 
-        return res.status(200).json({
+        const result = {
           totalCheckins: totalCheckins.count,
           activeEvents: activeEvents.count,
           surveyResponses: surveyResponsesCount.count,
           rewardsRedeemed: rewardsRedeemedCount.count,
-        });
+        };
+        
+        console.log('Dashboard stats result:', result);
+        return res.status(200).json(result);
       } catch (error) {
         console.error('Dashboard stats error:', error);
-        return res.status(500).json({ message: "Failed to fetch dashboard stats" });
+        return res.status(500).json({
+          message: "Failed to fetch dashboard stats",
+          error: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined
+        });
       }
     }
 
@@ -315,32 +346,54 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Businesses endpoint
     if (req.url === '/api/businesses' && req.method === 'GET') {
       try {
+        console.log('=== BUSINESSES REQUEST ===');
+        console.log('Getting database connection...');
         const database = getDb();
         if (!database) {
+          console.error('Database connection failed');
           throw new Error('Database connection not available');
         }
 
+        console.log('Executing businesses query...');
         const businessList = await database.select().from(businesses).orderBy(desc(businesses.createdAt));
+        console.log('Businesses found:', businessList.length);
+        console.log('Business data:', businessList);
+        
         return res.status(200).json(businessList);
       } catch (error) {
         console.error('Businesses error:', error);
-        return res.status(500).json({ message: "Failed to fetch businesses" });
+        return res.status(500).json({
+          message: "Failed to fetch businesses",
+          error: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined
+        });
       }
     }
 
     // Events endpoints
     if (req.url === '/api/events' && req.method === 'GET') {
       try {
+        console.log('=== EVENTS REQUEST ===');
+        console.log('Getting database connection...');
         const database = getDb();
         if (!database) {
+          console.error('Database connection failed');
           throw new Error('Database connection not available');
         }
 
+        console.log('Executing events query...');
         const eventsList = await database.select().from(events).orderBy(desc(events.eventDate));
+        console.log('Events found:', eventsList.length);
+        console.log('Events data:', eventsList);
+        
         return res.status(200).json(eventsList);
       } catch (error) {
         console.error('Events error:', error);
-        return res.status(500).json({ message: "Failed to fetch events" });
+        return res.status(500).json({
+          message: "Failed to fetch events",
+          error: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined
+        });
       }
     }
 
@@ -773,6 +826,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         url: req.url,
         timestamp: new Date().toISOString()
       });
+    }
+
+    // Debug endpoint to test database connection
+    if (req.url === '/api/debug/db' && req.method === 'GET') {
+      try {
+        console.log('=== DATABASE DEBUG ===');
+        console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
+        console.log('DATABASE_URL length:', process.env.DATABASE_URL?.length || 0);
+        
+        const database = getDb();
+        if (!database) {
+          return res.status(500).json({
+            error: "Database connection failed",
+            hasUrl: !!process.env.DATABASE_URL,
+            urlLength: process.env.DATABASE_URL?.length || 0
+          });
+        }
+
+        // Try a simple query
+        console.log('Testing simple query...');
+        const result = await database.select().from(events).limit(1);
+        console.log('Query result:', result);
+
+        return res.status(200).json({
+          message: "Database connection successful",
+          hasUrl: !!process.env.DATABASE_URL,
+          urlLength: process.env.DATABASE_URL?.length || 0,
+          queryResult: result.length,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        console.error('Database debug error:', error);
+        return res.status(500).json({
+          error: "Database query failed",
+          message: error instanceof Error ? error.message : "Unknown error",
+          hasUrl: !!process.env.DATABASE_URL,
+          urlLength: process.env.DATABASE_URL?.length || 0
+        });
+      }
     }
     
     // For other routes, return a placeholder response
