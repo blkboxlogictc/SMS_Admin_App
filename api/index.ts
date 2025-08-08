@@ -287,6 +287,67 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.error('Recent activity error:', error);
         return res.status(500).json({
           message: "Failed to fetch recent activity data",
+    // Simple database test endpoint (no auth required for debugging)
+    if (req.url === '/api/debug/db-test' && req.method === 'GET') {
+      try {
+        console.log('=== SIMPLE DATABASE TEST ===');
+        
+        const db = await getDbConnection();
+        const schemas = await getSchemas();
+        
+        if (!db || !schemas) {
+          return res.status(500).json({ 
+            error: 'Database connection or schemas failed',
+            hasDb: !!db,
+            hasSchemas: !!schemas
+          });
+        }
+
+        const { events, checkins, surveys, rewardItems, count } = schemas;
+
+        // Test basic queries to see what data exists
+        console.log('Testing database queries...');
+        
+        const [eventCount] = await db.select({ count: count() }).from(events);
+        console.log('Events count:', eventCount);
+        
+        const [checkinCount] = await db.select({ count: count() }).from(checkins);
+        console.log('Checkins count:', checkinCount);
+        
+        const [surveyCount] = await db.select({ count: count() }).from(surveys);
+        console.log('Surveys count:', surveyCount);
+        
+        const [rewardCount] = await db.select({ count: count() }).from(rewardItems);
+        console.log('Reward items count:', rewardCount);
+
+        // Get sample data
+        const sampleEvents = await db.select().from(events).limit(3);
+        const sampleCheckins = await db.select().from(checkins).limit(3);
+
+        return res.status(200).json({
+          message: "Database connection successful",
+          counts: {
+            events: eventCount.count,
+            checkins: checkinCount.count,
+            surveys: surveyCount.count,
+            rewardItems: rewardCount.count
+          },
+          samples: {
+            events: sampleEvents,
+            checkins: sampleCheckins
+          },
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        console.error('Database test error:', error);
+        return res.status(500).json({
+          error: "Database test failed",
+          message: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined
+        });
+      }
+    }
+
           error: error instanceof Error ? error.message : "Unknown error"
         });
       }
